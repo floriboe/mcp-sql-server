@@ -1,11 +1,57 @@
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import Dict, Any
+import sqlite3
+import os
+import requests
 
 app = FastAPI()
+DB_PATH = "coding_data.db"
+SQL_URL = "https://storage.googleapis.com/antedata_open/coding_data.sql"
 
-@app.get("/")
-def read_root():
-    return {"message": "Hello from MCP server"}
+# Rebuild SQLite DB from SQL file if not already built
+if not os.path.exists(DB_PATH):
+    print("Database not found — downloading SQL file...")
+    try:
+        r = requests.get(SQL_URL)
+        r.raise_for_status()
+        with open("coding_data.sql", "wb") as f:
+            f.write(r.content)
+        print("SQL file downloaded — creating database...")
+        with sqlite3.connect(DB_PATH) as conn:
+            with open("coding_data.sql", "r") as f:
+                conn.executescript(f.read())
+        print("Database created successfully.")
+    except Exception as e:
+        print(f"Error creating database: {e}")
+        raise RuntimeError(f"DB init failed: {e}")
+
+class QueryInput(BaseModel):
+    query: str
+
+@app.post("/mcp")
+def mcp_tool_handler(payload: Dict[str, Any]):
+    tool_call = payload.get("tool_call", {})
+    if tool_call.get("name") != "query_sql":
+        raise HTTPException(status_code=400, detail="Unsupported tool")
+
+    query = tool_call.get("input", {}).get("query", "")
+    if not query.strip().lower().startswith("select"):
+        raise HTTPException(status_code=403, detail="Only SELECT queries are allowed")
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(query)
+        cols = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        result = [dict(zip(cols, row)) for row in rows]
+        conn.close()
+        return { "tool_response": { "output": { "result": result } } }
+    except Exception as e:
+        print(f"Query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/.well-known/mcp-schema.json")
 def get_schema():
