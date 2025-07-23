@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: sqlite-mcp-server
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python sqlite_mcp_server.py
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_PATH
+        value: /tmp/database.db
+      - key: PYTHONUNBUFFERED
+        value: 1
+    disk:
+      name: sqlite-data
+      mountPath: /tmp
+      sizeGB: 1
