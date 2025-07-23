@@ -1,7 +1,7 @@
 
 from fastapi import FastAPI
 import os
-import uvicorn
+from uvicorn import Config, Server
 
 app = FastAPI()
 
@@ -36,7 +36,13 @@ def get_schema():
         ]
     }
 
-# Always run the server, even if main.py is run via module import
+# Use programmatic startup to avoid asyncio.run() issue
 port = int(os.environ.get("PORT", 8000))
 print(f"Starting server on port {port}...")
-uvicorn.run("main:app", host="0.0.0.0", port=port)
+config = Config(app=app, host="0.0.0.0", port=port)
+server = Server(config=config)
+
+import asyncio
+loop = asyncio.get_event_loop()
+loop.create_task(server.serve())
+loop.run_forever()
